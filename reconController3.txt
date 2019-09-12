@@ -1,0 +1,921 @@
+#!/bin/bash
+#PBS -l wd
+#
+###############
+# overall control script for running a recon
+###############
+
+# arg 1 = script name
+# arg 2 = num_nodes
+# arg 3 = num_tasks
+# arg 4 = num_tasks_per_node
+# arg 5 = mango_proj
+# arg 6 = copy2mdss
+# arg 7 = mdss_proj
+# arg 8 = user
+# arg 9 = stage
+function create_sbatch_file {
+    shrun="./sbatch_$9.sh"
+    echo "#!/usr/bin/env bash" > ${shrun}
+    echo "#" >> ${shrun}
+    if [[ $9 == reconstruct_GPU ]];
+    then
+#	echo "#SBATCH --ntasks-per-core=1 --nodes=$2 --ntasks=$3 --ntasks-per-node=$4 --gres=gpu:3 --time=24:00:00 --begin=09:00:00" >> ${shrun}
+	echo "#SBATCH --ntasks-per-core=1 --nodes=$2 --ntasks=$3 --ntasks-per-node=$4 --gres=gpu:3 --time=24:00:00" >> ${shrun}
+    else
+	echo "#SBATCH --nodes=1 --ntasks=1 --time=24:00:00 --nodelist=master20" >> ${shrun}
+    fi
+    echo "#" >> ${shrun}
+    echo "" >> ${shrun}
+    echo "export STAGE=$9" >> ${shrun}
+    echo "export DATA_ONLY=false" >> ${shrun}
+    echo "export MANGO_DIR=/home/data20/appmaths/opt/bin" >> ${shrun}
+    echo "export MANGO_EXE=mango" >> ${shrun}
+    echo "export SH_NAME=$1" >> ${shrun}
+    echo "export MANGO_PROJECT=$5" >> ${shrun}
+    echo "export COPY_TO_MDSS=$6" >> ${shrun}
+    echo "export MDSS_PROJECT=$7" >> ${shrun}
+    echo "export SCRIPTNAME=./$1" >> ${shrun}
+    echo "export RAIJIN_USER=$8" >> ${shrun}
+    echo "" >> ${shrun}
+    echo "source ~/.bashrc" >> ${shrun}
+    echo "" >> ${shrun}
+    echo "/home/data20/appmaths/opt/bin/$1" >> ${shrun}
+    chmod +x ${shrun}
+}
+
+#Often-used pattern for safer execution of commands.
+function safeExec {
+    echo $1
+    $1 || exit
+}
+
+# Function to launch the mdss projdata script.
+function mdssProjData {
+    safeExec "qsub -P $mango_proj -v MANGO_PROJECT=$mango_proj,MANGO_DIR=$mango_dir,MDSS_PROJECT=$mdss_proj, $mango_dir/mdss_projdata.sh"
+}
+
+# Function to determine whether we're doing a GPU run or not.
+function setDoOnGPU {
+    doOnGPU=$(cat proju16_raw/expt*.in | grep -m1 "iterative_trajectory" | awk '{print $2}')
+}
+
+function getNextGpuRun {
+    next=`head -n1 $HOME/.gpuReconQueue` || exit
+    next_gpu_prj=`echo $next | cut -d/ -f1` || exit
+    next_gpu_smp=`echo $next | cut -d/ -f2` || exit
+    echo "Next GPU project/sample found to be $next_gpu_prj/$next_gpu_smp"
+}
+
+# Function run when the data is on raijin, to decide what runs next.
+# Broken into a function because its at the end of both get_data stages.
+function chooseReconPathway {
+    setDoOnGPU
+    if [[ $data_only == "false" ]];
+    then
+        if [[ $doOnGPU == "true" || $use_raijin_gpu == "yes" ]]; then
+            if [[ $use_raijin_gpu == "no" ]]; then
+                # If we're next on the GPU queue, then proceed, else quit.
+                getNextGpuRun
+                if [[ $next_gpu_smp == $sample && $next_gpu_prj == $project ]]; then
+                    stage=init_gpu_box_copy
+                else
+                    # add us to the gpu queue if we're not already in it.
+                    if (grep -Fxq "${project}/${sample}" $HOME/.gpuReconQueue); then
+                        echo Job already found in GPU queue
+                    else
+                        echo "${project}/${sample}" >> $HOME/.gpuReconQueue
+                    fi
+                    exit
+                fi
+            else
+                stage=init_reconstruct
+            fi
+        else
+            stage=init_old_autofocus
+        fi
+    else
+        exit
+    fi
+}
+
+echo "Welcome to reconController.sh"
+# options for use_raijin_gpu are "no", "iterative_only", "yes"
+# use_raijin_gpu="iterative_only"
+use_raijin_gpu="no"
+
+sample=$(pwd | sed 's#^.*/\([^/]*\)$#\1#')
+project=$(pwd | sed 's#^.*/\([^/]*\)/[^/]*$#\1#')
+
+# mdss command not available on the cluster.
+if [[ ! $SLURM_MPI_TYPE ]];
+then
+    if [[ $PROJECT == y11 ]]; then
+	mdss_proj=y11
+    else
+	mdss -P w09 ls repository/$project
+	if mdss -P h85 ls $project > /dev/null 2>&1;
+	then
+	    mdss_proj=h85
+	else
+	    if mdss -P w09 ls repository/$project > /dev/null 2>&1;
+	    then
+		mdss_proj=w09
+	    else
+		if [[ $MDSS_PROJECT == h85 ]];
+		then
+		    mdss_proj=h85
+		else
+		    mdss_proj=w09
+		fi
+	    fi
+	fi
+    fi
+fi
+
+# Patch the slurm job id into the PBS one, in case we're on the cluster.
+if [[ $SLURM_JOB_ID ]];
+then
+    PBS_JOBID=${SLURM_JOB_ID}
+fi
+
+
+# when called interactively, just qsub ourselves into the copyq to copy the data from the acquisition computer
+if [[ ! $PBS_JOBID ]];
+then
+    # do a sanity check, we need some arguments
+    if [[ $# < 2 || $# == 3 || $# == 4 ]];
+    then
+        echo "Usage:"
+        echo "  reconController.sh mango_dir stage"
+        echo "  or"
+        echo "  reconController.sh project mango_dir mango script copy_to_mdss"
+        echo "  or"
+        echo "  reconController.sh project mango_dir mango script copy_to_mdss stage"
+        echo "  or"
+        echo "  reconController.sh project mango_dir mango script copy_to_mdss mdss_project stage"
+        echo "  "
+        echo "     where: mango_dir and stage as above"
+        echo "            project      = d59 or y11"
+        echo "            mango_dir = path to mango executable to use"
+        echo "            mango        = mango executable without path, has to be in mango_dir"
+        echo "            script       = name of this .sh file without path, has to be in mango_dir"
+        echo "            copy_to_mdss = if true backup projection and reconstruction data to mdss"
+        echo "            mdss_project = w09, h85, or y11"
+        echo "            stage     = stage of process at which to start, options include:"
+        echo "                        init_get_data (default)"
+        echo "                        init_get_data_only"
+        echo "                        init_old_autofocus"
+        echo "                        init_reconstruct"
+        echo "                        init_copy"
+        echo "                        init_accept (for deleting all working directories of a finished recon)"
+        exit
+    fi
+
+    if [[ $# == 2 ]];
+    then
+#Arguments are:
+# $1 = bin_directory
+# $2 = STAGE
+        script=$1/reconController.sh
+        mango_proj=$PROJECT
+        mango_dir=$1
+        mango_exe=mango
+        sh_name=reconController.sh
+        copy2mdss=true
+        mdss_project=AUTO_DETECT
+        stage=$2
+	data_only=false
+    else
+#Arguments are:
+# $1 = project (e.g. d59 or y11)
+# $2 = bin_directory
+# $3 = executable (without path, use bin_directory for path)
+# $4 = script (without path, use bin_directory for path)
+# $5 = copy to mdss
+### EITHER ###
+# no more args
+### OR ###
+# $6 = STAGE
+### OR ###
+# $6 = mdss project (w09 or h85)
+# $7 = STAGE
+        script=$2/$4
+        mango_proj=$1
+        mango_dir=$2
+        mango_exe=$3
+        sh_name=$4
+        copy2mdss=$5
+        if [[ $# == 5 ]];
+        then
+            mdss_project=AUTO_DETECT
+            stage=init_get_data
+	    data_only=false
+        elif [[ $# == 6 ]];
+        then
+            mdss_project=AUTO_DETECT
+            stage=$6
+	    data_only=false
+        elif [[ $# == 7 ]];
+        then
+            mdss_proj=$6
+            stage=$7
+	    data_only=false
+        fi
+	if [[ $stage == "init_get_data_only" ]];
+	then
+	    data_only=true
+	    stage=init_get_data
+        elif [[ $stage == "init_get_data_mdss_only" ]];
+        then
+            data_only=true
+            stage=init_get_data_mdss
+	else
+	    data_only=false
+	fi
+    fi
+
+    if [[ $mdss_project == AUTO_DETECT ]];
+    then
+      if [[ $PROJECT == y11 ]]; then
+        mdss_proj=y11
+      else
+        if mdss -P h85 ls $project > /dev/null 2>&1;
+        then
+          mdss_proj=h85
+        elif mdss -P w09 ls repository/$project > /dev/null 2>&1;
+        then
+          mdss_proj=w09
+        elif [[ $MDSS_PROJECT == h85 ]];
+        then
+          mdss_proj=h85
+        else
+          mdss_proj=w09
+        fi
+      fi
+    fi
+
+    echo "launching reconstruction with:"
+    echo "project    = $project"
+    echo "sample     = $sample"
+    echo "script     = $script"
+    echo "mango_proj = $mango_proj"
+    echo "mango_dir  = $mango_dir"
+    echo "mango_exe  = $mango_exe"
+    echo "copy2mdss  = $copy2mdss"
+    echo "mdss_proj  = $mdss_proj"
+    echo "stage      = $stage"
+    echo "data_only  = $data_only"
+
+else
+    script=$SCRIPTNAME
+    mango_proj=$MANGO_PROJECT
+    mango_dir=$MANGO_DIR
+    mango_exe=$MANGO_EXE
+    sh_name=$SH_NAME
+    copy2mdss=$COPY_TO_MDSS
+    mdss_proj=$MDSS_PROJECT
+    stage=$STAGE
+    data_only=$DATA_ONLY
+fi
+
+## If we have run out of quota on d59, use w09 temporarily by creating the file ___D59_W09_override___ in $HOME
+if [[ $mango_proj == d59 ]];
+then
+    if [ -f /home/110/xct110/___D59_W09_override___ ];
+    then
+        mango_proj=w09
+    fi
+fi
+
+#
+#1. copy projection files from acq machine.  Use passwordless scp or rsync if no better option available.  Do it in copyq so that it can be tracked, and to minimise load on vayu frontend
+#
+
+if [[ $stage == "init_get_data" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    # Verify that the data directory is correct before queuing a job to
+    # catch potential issues at launch time. Each potential acquisition computer needs to be specified here.
+    # This allows for a different username, and different directory structure on each machine.
+
+    acqcomp=not_found;
+    acqcomp_user=not_found;
+    acqcomp_root=not_found;
+
+    currentRoot="/g/data2/w09/CT_Data"
+    echo Looking for data in $currentRoot / $project / $sample
+    test -d $currentRoot/$project
+    if [ "$?" -eq "0" ]; then
+        #echo Found project $project on $currentComputer
+        test -d $currentRoot/$project/$sample
+        if [ "$?" -eq "0" ]; then
+            echo "Found sample $sample on /g/data2"
+            acqcomp=LOCAL
+            acqcomp_root=$currentRoot
+            acqcomp_user=ctlabdata
+            echo "Using SFTP (Secure File Transfer Protocol) for get_data, ignoring $sample on /g/data2."
+            echo "Proceeding to search on acquisition computers..."
+            acqcomp=not_found;
+            acqcomp_user=not_found;
+            acqcomp_root=not_found;
+        fi
+    fi
+
+    if [ "$acqcomp" == "not_found" ]; then
+        echo "Could not find project/sample name on g/data2."
+        echo "Checking computer list in $HOME/.reconControllerComputerList"
+
+        for currentLocation in `cat $HOME/.reconControllerComputerList`; do
+            if [ "$acqcomp" != "not_found" ]; then
+                continue
+            fi
+            currentComputer=`echo $currentLocation|sed -e's/.*@//' -e's/:.*//'`;
+	    currentUser=`echo $currentLocation|sed -e's/@.*//'`;
+	    currentRoot=`echo $currentLocation|sed -e's/.*://'`;
+
+	    if [[ $currentUser != \#* ]]; then
+	        echo "Looking for data in $currentUser @ $currentComputer : $currentRoot / $project / $sample"
+
+	        ssh $currentUser@$currentComputer test -d $currentRoot/$project
+	        if [ "$?" -eq "0" ]; then
+                    #echo Found project $project on $currentComputer
+
+		    ssh $currentUser@$currentComputer test -d $currentRoot/$project/$sample
+
+		    if [ "$?" -eq "0" ]; then
+		        echo "Found sample $sample on $currentComputer"
+		        acqcomp=$currentComputer
+		        acqcomp_root=$currentRoot
+		        acqcomp_user=$currentUser
+		    else
+		        echo "No such sample on: $currentUser@$currentComputer:$currentRoot/$project/$sample"
+                        #exit
+		    fi
+	        else
+		    echo "No such project on acquisition computer: $currentUser@$currentComputer:$currentRoot/$project"
+                    #exit
+	        fi
+	    fi
+        done
+    fi
+    #Did we find the data anywhere? If not, stop. Otherwise, launch reconstruction.
+
+    if [ "$acqcomp" == "not_found" ]; then
+	echo Could not find project/sample name.
+	exit
+    fi
+
+    echo "$script $mango_proj $mango_dir $mango_exe $sh_name $copy2mdss $mdss_proj init_get_data" > launchReconProgram.sh
+    chmod u+x launchReconProgram.sh
+
+    cmd="qsub -q copyq -N get_data -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00,other=gdata2 -v STAGE=get_data,DATA_ONLY=$data_only,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script,ACQCOMP=$acqcomp,ACQCOMPROOT=$acqcomp_root,ACQCOMPUSER=$acqcomp_user $script"
+    echo $cmd
+    $cmd
+    exit
+fi
+
+if [[ $stage == "get_data" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    echo "Copying data from acquisition computer..."
+    echo "wd=$PWD"
+    cmd="$mango_dir/getExptData.sh $ACQCOMP $ACQCOMPUSER $ACQCOMPROOT";
+    echo $cmd
+    $cmd || exit
+    echo "Data copied successfully"
+
+    # Stash data on mdss
+    if [[ $copy2mdss == "true" ]];
+    then
+        mdssProjData
+    fi
+
+    # prep for next stage, or quit.
+    chooseReconPathway
+fi
+
+if [[ $stage == "init_get_data_mdss" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    echo "$script $mango_proj $mango_dir $mango_exe $sh_name $copy2mdss $mdss_proj init_get_data_mdss" > launchReconProgram.sh
+    chmod u+x launchReconProgram.sh
+
+    cmd="qsub -q copyq -N get_data_mdss -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=10:00:00 -v STAGE=get_data_mdss,DATA_ONLY=$data_only,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+    echo $cmd
+    $cmd
+    exit
+fi
+
+if [[ $stage == "get_data_mdss" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    echo "Copying data from mdss..."
+    echo "wd=$PWD"
+    # This script will not fetch files/directories that already exist
+    safeExec "$mango_dir/getMdssData.sh"
+    echo "Data copied successfully"
+
+    # prep for next stage, or quit.
+    chooseReconPathway
+fi
+
+if [[ $stage == "init_old_autofocus" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    echo "Copying autofocus files to current directory"
+    cp "/short/d59/xct110/AfTemplates/autofocus.in" .
+    cp "/short/d59/xct110/AfTemplates/autofocus_run.sh" .
+    chmod +x ./autofocus_run.sh
+    cmd="qsub -N old_autofocus -P $mango_proj -W umask=027 -lncpus=256,mem=1024GB,walltime=10:00:00 -v STAGE=old_autofocus,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+    echo $cmd
+    $cmd
+    exit
+fi
+
+
+if [[ $stage == "old_autofocus" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    cmd="./autofocus_run.sh"
+    echo $cmd
+    $cmd || exit
+    echo "Autofocus done successfully"
+
+    stage=init_reconstruct
+fi
+
+if [[ $stage == "init_gpu_box_copy" ]];
+then
+    # The gpu_box_copy stage should copy the data to the GPU box, and then pass control there.
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    echo "$script $mango_proj $mango_dir $mango_exe $sh_name $copy2mdss $mdss_proj init_gpu_box_copy" > launchReconProgram.sh
+    chmod u+x launchReconProgram.sh
+
+    safeExec "qsub -q copyq -N gpu_box_push -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=10:00:00 -v STAGE=gpu_box_copy,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=true,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+    exit
+fi
+
+if [[ $stage == "gpu_box_copy" ]];
+then
+    echo "Copying data to the GPU box"
+    # Define the GPU location
+    gpu_location="/home/appmaths/recon_ws/${project}/${sample}"
+    gpu_user="appmaths"
+    gpu_machine="am053.anu.edu.au"
+    echo "ssh ${gpu_user}@${gpu_machine} 'mkdir -p ${gpu_location}/proju16_raw'"
+    ssh ${gpu_user}@${gpu_machine} mkdir -p ${gpu_location}/proju16_raw
+    module load numpy
+    cmd="${mango_dir}/pushReconData.py"
+    echo $cmd
+    $cmd || exit
+    echo "Data copied successfully"
+
+    #Queue up the next stage
+    stage=init_reconstruct
+fi
+
+if [[ $stage == "init_reconstruct" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    num_projections=$(ls proju16_raw | wc -l)
+    echo "numProjs=$num_projections"
+
+    size_projections_bytes=$(ls -l ./proju16_raw/*_CF000000.raw | awk '{print $5}')
+    size_projections_megaPixels=$(( $size_projections_bytes / (1024*1024*2) ))
+    if [[ $size_projections_megaPixels == 0 ]]; then #0 won't work as we would ask for 0 cpus
+	echo "Setting mega pixels to 1"
+	size_projections_megaPixels=1
+    fi
+    echo "sizeProjs=$size_projections_megaPixels megaPixels"
+
+    nprocs=$(( 16 * $size_projections_megaPixels * (1 + $num_projections/2048) ))
+
+    trajectoryType=$(cat proju16_raw/*_tomo.in | grep trajectory | awk '{print $2}')
+
+    if [[ $trajectoryType =~ .*irc.* ]]
+    then
+        echo "trajectory is circular"
+        if [[ $nprocs -gt 192 ]]; then #maybe shouldn't do this for circular?
+            nprocs=192
+        fi
+	if [[ $size_projections_megaPixels -gt 4 ]]; then
+	    walltime="6:00:00"
+	else
+	    walltime="2:00:00"
+	fi
+    else
+        echo "trajectory is helical"
+        if [[ $nprocs -gt 256 ]]; then
+            nprocs=256
+        fi
+	if [[ $size_projections_megaPixels -gt 4 ]]; then
+	    walltime="36:00:00"
+	else
+	    walltime="12:00:00"
+	fi
+    fi
+
+    if [[ $size_projections_megaPixels -gt 4 ]]; then
+        echo "Large FlatPanel detector, therefore assigning 4GB mem per node"
+        mem=$(( $nprocs * 4 ))
+    else
+        mem=$(( $nprocs * 2 ))
+    fi
+
+    echo "nprocs=$nprocs"
+    echo "mem=$mem"
+    echo "walltime=$walltime"
+
+    echo "$script $mango_proj $mango_dir $mango_exe $sh_name $copy2mdss $mdss_proj init_reconstruct" > launchReconProgram.sh
+    chmod u+x launchReconProgram.sh
+
+    setDoOnGPU
+    if [[ $doOnGPU == "true" && $use_raijin_gpu == "no" ]];
+    then
+	echo "Doing Space Filling on GPU boxes"
+        # Define the GPU location
+        gpu_location="/home/appmaths/recon_ws/${project}/${sample}"
+        gpu_user="appmaths"
+	# (jpv) can't see master20 from xct110@raijin
+        gpu_name="am053.anu.edu.au"
+        # rsync the launchrecon changes, and then submit on the gpu cluster.
+	echo "copy launchReconProgram.sh to gpu cluster"
+	doRsync.sh ./launchReconProgram.sh ${gpu_user}@${gpu_name}:${gpu_location}
+        # Set up the environment variables for the GPU box
+        gpu_env="STAGE=reconstruct_GPU,DATA_ONLY=false,MANGO_DIR=/home/data20/appmaths/opt/bin,MANGO_EXE=mango,SH_NAME=${sh_name},MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=${gpu_location}/${sh_name}"
+	echo "Remote script = ${gpu_location}/${sh_name}"
+        # The GPU submission command
+
+	num_nodes=1
+	num_tasks_per_node=3
+	num_tasks=3
+        ### recommended CPU layouts ###
+        # if 3k (jpv Pixium is 2880x2881, I'll include it in this option): 2 nodes - 3 procs/node
+	big_monitor=2800*2800*2
+        # if 2K:
+	#    if < 5000 proj 1 node - 3 procs/node
+	#    if > 5000 proj 2 node - 3 procs/node
+	medium_monitor=2000*2000*2
+        # if 1.5k: 1 node - 3 procs
+        if [[ $size_projections_bytes -gt $big_monitor ]]; then
+	    num_nodes=2
+	    num_tasks=6
+	else
+	    if [[ $num_projections -gt 5000 ]]; then
+		num_nodes=2
+		num_tasks=6
+	    fi
+	fi
+	echo "Setting num_nodes to ${num_nodes} and num_tasks to ${num_tasks}"
+
+	# once we are in production mode, delay start of production recons to 5pm
+        # gpu_cmd="sbatch --nodes=${num_nodes} --ntasks-per-node=${num_tasks} --time=24:00:00 --begin=09:00:00 --export=${gpu_env} ${gpu_location}/${sh_name}"
+
+
+        # gpu_cmd="sbatch --ntasks-per-core=1 --nodes=${num_nodes} --ntasks=${num_tasks} --gres=gpu:3 --time=24:00:00 --export=${gpu_env} ${gpu_location}/${sh_name}"
+        # Submit the recon job on the cluster
+        # ssh ${gpu_user}@${gpu_name} "cd ${gpu_workspace}/${gpu_location} ; ${gpu_cmd}"
+
+	create_sbatch_file ${sh_name} ${num_nodes} ${num_tasks} ${num_tasks_per_node} ${mango_proj} ${copy2mdss} ${mdss_proj} ${USER} reconstruct_GPU
+	shrun="./sbatch_reconstruct_GPU.sh"
+	# echo "#!/usr/bin/env bash" > ${shrun}
+	# echo "#" >> ${shrun}
+	# echo "#SBATCH --ntasks-per-core=1 --nodes=${num_nodes} --ntasks=${num_tasks} --ntasks-per-node=${num_tasks_per_node} --gres=gpu:3 --time=24:00:00 --begin=09:00:00" >> ${shrun}
+	# echo "#" >> ${shrun}
+	# echo "" >> ${shrun}
+	# echo "export STAGE=reconstruct_GPU" >> ${shrun}
+	# echo "export DATA_ONLY=false" >> ${shrun}
+	# echo "export MANGO_DIR=/home/data20/appmaths/opt/bin" >> ${shrun}
+	# echo "export MANGO_EXE=mango" >> ${shrun}
+	# echo "export SH_NAME=${sh_name}" >> ${shrun}
+	# echo "export MANGO_PROJECT=${mango_proj}" >> ${shrun}
+	# echo "export COPY_TO_MDSS=${copy2mdss}" >> ${shrun}
+	# echo "export MDSS_PROJECT=${mdss_proj}" >> ${shrun}
+	# echo "export SCRIPTNAME=./${sh_name}" >> ${shrun}
+	# echo "export RAIJIN_USER=${USER}" >> ${shrun}
+	# echo "" >> ${shrun}
+	# echo "source ~/.bashrc" >> ${shrun}
+	# echo "" >> ${shrun}
+	# echo "${MANGO_DIR|/${sh_name}" >> ${shrun}
+	doRsync.sh $shrun ${gpu_user}@${gpu_name}:${gpu_location}
+	gpu_cmd="sbatch ${shrun}" 
+        ssh ${gpu_user}@${gpu_name} "cd ${gpu_workspace}/${gpu_location} ; ${gpu_cmd}"
+    elif [[ $use_raijin_gpu != "no" ]];
+    then
+	# work out parameters to use for reconstruction on raijin gpu boxes
+	ngpus=8
+        ncpus=$(( $ngpus * 3 ))
+        cmd="qsub -q gpu -N recon_gpu -P $mango_proj -W umask=027 -lngpus=$ngpus,ncpus=$ncpus,mem=${mem}GB,walltime=$walltime -v STAGE=reconstruct_nci_gpu,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+        echo $cmd
+	$cmd || exit
+    else
+        cmd="qsub -N recon -P $mango_proj -W umask=027 -lncpus=$nprocs,mem=${mem}GB,walltime=$walltime -v STAGE=reconstruct,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+        echo $cmd
+        $cmd || exit
+    fi
+    exit
+fi
+
+#2. do recon as qsub to appropriate queue (see attached .in and _run.sh files).  a rough rule of thumb for resources:
+#
+
+# TODO: This stage can be eliminated once putReconInfo is properly generalised.
+if [[ $stage == "reconstruct_GPU" ]];
+then
+
+    echo "Removing ___gpuToRaijinCopy_OK___ flag on raijin"
+    raijin_id="${RAIJIN_USER}@raijin.nci.org.au"
+    raijin_location="/home/110/${RAIJIN_USER}/recon_ws/${project}/${sample}/___gpuToRaijinCopy_OK___"
+    if (ssh ${raijin_id} "[ -f ${raijin_location} ]"); then
+        safeExec "ssh ${raijin_id} rm ${raijin_location}"
+    fi
+
+    cmd="source /home/appmaths/.bashrc"
+    $cmd
+    cmd="/home/data20/appmaths/opt/bin/doRecon.py"
+    echo $cmd
+    $cmd || exit
+    echo "Reconstruction done successfully"
+
+    # Remove all tomo_float files as they are not required and tend to be large
+    cmd="rm -rf tomo_float*"
+    echo "Removing tomo_float files"
+    $cmd
+    create_sbatch_file ${sh_name} "1" "1" "1" ${mango_proj} ${copy2mdss} ${mdss_proj} ${RAIJIN_USER} init_copy
+    shrun="./sbatch_init_copy.sh"
+    gpu_cmd="sbatch ${shrun}" 
+    ${gpu_cmd}
+    exit
+fi
+
+if [[ $stage == "reconstruct" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    export MANGO_RECON_MAX_SLICES_PER_CPU_CHUNK=4
+    export MANGO_RECON_PROJECTION_CACHE_SIZE=360 #MB
+    export MANGO_RECON_NUM_BUFFERED_PROJECTIONS=12
+    export MANGO_RECON_NUM_BUFFERED_PROJECTIONS_GPU=20
+    export MANGO_RECON_CPUS_PER_GPU=1
+
+    cmd=$mango_dir/doRecon.sh
+    echo $cmd
+    $cmd || exit
+    echo "Reconstruction done successfully"
+
+    stage=init_copy
+fi
+
+if [[ $stage == "reconstruct_nci_gpu" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+    export MANGO_RECON_MAX_SLICES_PER_CPU_CHUNK=4
+    export MANGO_RECON_PROJECTION_CACHE_SIZE=360 #MB
+    export MANGO_RECON_NUM_BUFFERED_PROJECTIONS=12
+    export MANGO_RECON_NUM_BUFFERED_PROJECTIONS_GPU=20
+    export MANGO_RECON_CPUS_PER_GPU=1
+
+    cmd=$mango_dir/doReconNCIGPU.sh
+    echo $cmd
+    $cmd || exit
+    echo "Reconstruction on NCI GPUs done successfully"
+
+    stage=init_copy
+fi
+
+if [[ $stage == "init_copy" ]];
+then
+
+    # If we're not on raijin, pass control back there.
+    if [[ $SLURM_MPI_TYPE ]];
+    then
+	echo "stage is init_copy on $HOSTNAME"
+        sample=$(pwd | sed 's#^.*/\([^/]*\)$#\1#')
+        project=$(pwd | sed 's#^.*/\([^/]*\)/[^/]*$#\1#')
+        raijin_id="${RAIJIN_USER}@raijin.nci.org.au"
+        raijin_location="/home/110/${RAIJIN_USER}/recon_ws/${project}/${sample}"
+        # Alter launchReconScript so that it will start at init_copy
+        cmd="sed -i s/init_reconstruct/init_copy/ launchReconProgram.sh"
+        echo $cmd
+        $cmd || exit
+        # Copy the new reconScript to raijin
+        doRsync.sh launchReconProgram.sh ${raijin_id}:${raijin_location}/launchReconProgram.sh || exit
+        # Submit the launchReconScript on raijin.
+        # ssh ${raijin_id} "cd ${raijin_location} ; chmod +x ./launchReconProgram.sh ; ./launchReconProgram.sh"
+        ssh ${raijin_id} "cd ${raijin_location} ; ./launchReconProgram.sh"
+        exit
+    fi
+
+    cmd="qsub -q copyq -N do_copy -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00 -v STAGE=do_copy,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script $script"
+    echo $cmd
+    $cmd
+    exit
+fi
+
+if [[ $stage == "do_copy" ]];
+then
+    # If this is a GPU run, get the data back from the GPU box.
+    setDoOnGPU
+    if [[ $doOnGPU == "true" && $use_raijin_gpu == "no" ]];
+    then
+        #rsync data on am053 to raijin
+	module load numpy
+        if [ ! -f ./___gpuToRaijinCopy_OK___  ]; then
+            cmd=$mango_dir/gpuDataToRaijin.py
+            echo $cmd
+            $cmd || exit
+            touch ./___gpuToRaijinCopy_OK___
+        else
+            echo Skipping data copy from gpu box as flag ___gpuToRaijinCopy_OK___ is set
+        fi
+
+        # remove project/sample from gpuReconQueue.log
+        # If this sample is not in the .gpuReconQueue, then we'll assume it's a
+        # special, one-time job, and skip launching the next recon by setting the flag.
+        prj=$(pwd | sed 's#^.*/\([^/]*\)/[^/]*$#\1#')
+        smp=$(pwd | sed 's#^.*/\([^/]*\)$#\1#')
+        echo "Removing $prj/$smp from .gpuReconQueue"
+        if (grep -Fxq "${prj}/${smp}" ${HOME}/.gpuReconQueue); then
+            cat $HOME/.gpuReconQueue | grep -Fxv "${prj}/${smp}" > $HOME/.gpuReconQueue.new && mv $HOME/.gpuReconQueue.new $HOME/.gpuReconQueue
+        else
+            echo "Job $prj/$smp not found in .gpuReconQueue. Assuming this was a 1-time job, so setting the ___nextGpuRunQueued___ flag so that we don't double up on queue jobs"
+            touch ./___nextGpuRunQueued___
+        fi
+
+        #start next GPU recon job (if there is one, and it hasn't been done already)
+        if [[ -s $HOME/.gpuReconQueue && ! -f ./___nextGpuRunQueued___ ]]; then
+            echo "Launching next GPU recon job:"
+            getNextGpuRun
+
+            # ensure next path exists; if not create it
+            nextPath="$HOME/recon_ws/$next_gpu_prj"
+            if [[ ! -d $nextPath ]]; then
+                echo "mkdir $nextPath"
+                mkdir $nextPath || exit
+            else
+                echo "$nextPath exists"
+            fi
+            nextPath="$nextPath/$next_gpu_smp"
+            if [[ ! -d $nextPath ]]; then
+                echo "mkdir $nextPath"
+                mkdir $nextPath || exit
+            else
+                echo "$nextPath exists"
+            fi
+            #record current path
+            currPath=$PWD || exit
+
+            # change to new path and launch/resume recon
+            echo "cd $nextPath"
+            cd $nextPath || exit
+
+            echo "$script $mango_dir init_get_data_mdss" > launchReconProgram.sh
+            chmod u+x launchReconProgram.sh
+            #No support at the moment for changing project.
+            next_gpu_mango_proj=$mango_proj
+            next_gpu_mdss_proj=$mdss_proj
+            safeExec "qsub -q copyq -N init_get_data_mdss -P $next_gpu_mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=10:00:00 -v STAGE=init_get_data_mdss,DATA_ONLY=false,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$next_gpu_mango_proj,COPY_TO_MDSS=true,MDSS_PROJECT=$next_gpu_mdss_proj,SCRIPTNAME=$script $script"
+
+            #change back and resume do_copy
+            echo "cd $currPath" 
+            cd $currPath || exit
+            touch ./___nextGpuRunQueued___
+        else
+            echo Either ___nextGpuRunQueue___ is set or no queue
+        fi
+    fi
+    # Make the results visible to the CAM computers
+    new_group=w09
+    if [[ $mdss_proj == y11 ]];
+    then
+	new_group=y11
+    elif [[ $mdss_proj == h85 ]];
+    then
+	new_group=h85
+    fi
+    if [[ $mango_proj != $new_group ]];
+    then
+	cmd="chgrp -R ${new_group} *"
+	$cmd || exit
+    fi
+    cmd="chmod -R g+rX *"
+    $cmd || exit
+
+#5. commit proj, tomo and related recon files to store with qsub of mdss_tomodata.sh
+    if [[ $copy2mdss == "true" ]];
+    then
+        mdssProjData
+        safeExec "qsub -P $mango_proj -v MANGO_PROJECT=$mango_proj,MANGO_DIR=$mango_dir,MDSS_PROJECT=$mdss_proj,  $mango_dir/mdss_tomodata.sh"
+    fi
+
+#4. copy some stuff oveine the GPU location
+        gpu_location="/home/appmaths/recon_ws/${project}/${sample}"
+        gpu_user="appmaths"
+	# (jpv) can't see master20 from xct110@raijin
+        gpu_name="am053.anu.edu.au"
+        # rsync thr to the acquisition computer (need passwordless ssh).  Do this currently with ~aps110/bin/putReconInfo.sh.  There may be another place to put the data?
+    cmd="qsub -P $mango_proj -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    echo $cmd
+    $cmd
+fi
+
+
+#6. delete everything on working dir in /short (if requested???)
+#
+
+if [[ $stage == "init_accept" ]];
+then
+
+    # update status:
+    cmd="qsub -P $mango_proj -v MANGO_RECON_STATUS=$stage -W umask=027 -lother=gdata2 $mango_dir/putReconInfo.sh"
+    $cmd
+
+
+    acqcomp=not_found;
+    acqcomp_user=not_found;
+    acqcomp_root=not_found;
+
+    echo Using computer list from $HOME/.reconControllerComputerList
+
+    for currentLocation in `cat $HOME/.reconControllerComputerList`; do
+	currentComputer=`echo $currentLocation|sed -e's/.*@//' -e's/:.*//'`;
+	currentUser=`echo $currentLocation|sed -e's/@.*//'`;
+	currentRoot=`echo $currentLocation|sed -e's/.*://'`;
+
+	if [[ $currentUser != \#* ]]; then
+	    echo Looking for data in $currentUser @ $currentComputer : $currentRoot / $project / $sample
+
+	    ssh $currentUser@$currentComputer test -d $currentRoot/$project
+	    if [ "$?" -eq "0" ]; then
+                #echo Found project $project on $currentComputer
+
+		ssh $currentUser@$currentComputer test -d $currentRoot/$project/$sample
+
+		if [ "$?" -eq "0" ]; then
+		    echo Found sample $sample on $currentComputer
+		    acqcomp=$currentComputer
+		    acqcomp_root=$currentRoot
+		    acqcomp_user=$currentUser
+		else
+		    echo No such sample on: $currentUser@$currentComputer:$currentRoot/$project/$sample
+                    #exit
+		fi
+	    else
+		echo No such project on acquisition computer: $currentUser@$currentComputer:$currentRoot/$project
+                #exit
+	    fi
+	fi
+    done
+
+    #Did we find the data anywhere?
+
+    if [ "$acqcomp" == "not_found" ]; then
+        echo Could not find project/sample name. Assume data was downloaded from mdss.
+        cmd="qsub -P $mango_proj $mango_dir/acceptRecon.sh"
+        echo $cmd
+        $cmd
+    else
+        cmd="qsub -P $mango_proj -v ACQ_COMP=$acqcomp,ACQ_COMP_ROOT=$acqcomp_root,ACQ_COMP_USER=$acqcomp_user $mango_dir/acceptRecon.sh "
+        echo $cmd
+        $cmd
+    fi
+    exit
+fi
