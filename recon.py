@@ -4,7 +4,7 @@ import sys
 import re
 import argparse
 import json
-
+from init_get_data import init_get_data
 ##### functions
 
 ####
@@ -37,6 +37,9 @@ args = parser.parse_args()
 # $5 = copy to mdss
 # $6 = mdss project (w09 or h85)
 # $7 = STAGE
+
+retry = os.system("ls *.stage")  # if there is stage file, then it is retry.
+
 dic={}
 dic["mango_proj"]= args.project
 dic["mango_dirj"]= args.bin_directory
@@ -45,9 +48,27 @@ dic["sh_name"]= args.script
 dic["copy2mdss"]= args.copytomdss
 dic["stage"]= args.stage
 
-f=open("init_data_tmp","w")
 
+if not os.path.exists(init_data_file):
+
+f=open("init_data"+"_tmp","w")
 json.dump(dic,f)
+f.close()
+os.system("mv {} {}".format(init_data_file+"_tmp",init_data_file))
+
+
+
+result = init_get_data()
+
+
+
+if not result:
+    sys.exit(0)  #TODO
+
+
+
+
+
 
 
 
