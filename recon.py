@@ -3,7 +3,7 @@ import utils
 import sys
 import re
 import argparse
-
+import json
 
 ##### functions
 
@@ -21,7 +21,6 @@ workspace = os.path.split(cwd)[1]
 if workspace!="recon_ws":
     sys.exit(1)
 parser = argparse.ArgumentParser(description="input the .xml path and output file path")
-
 parser.add_argument("--project", default="", help="project (e.g. d59 or y11)")
 parser.add_argument("--bin_directory", default="")
 parser.add_argument("--executable", default="", help="without path, use bin_directory for path")
@@ -38,22 +37,17 @@ args = parser.parse_args()
 # $5 = copy to mdss
 # $6 = mdss project (w09 or h85)
 # $7 = STAGE
+dic={}
+dic["mango_proj"]= args.project
+dic["mango_dirj"]= args.bin_directory
+dic["mango_exe"]= args.executable ## ?
+dic["sh_name"]= args.script
+dic["copy2mdss"]= args.copytomdss
+dic["stage"]= args.stage
 
-mangodir =
+f=open("init_data_tmp","w")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+json.dump(dic,f)
 
 
 
