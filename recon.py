@@ -5,6 +5,8 @@ import re
 import argparse
 import json
 from init_get_data import init_get_data
+
+json_dir = "json"
 ##### functions
 
 ####
@@ -20,50 +22,45 @@ workspace = os.path.split(cwd)[1]
 
 if workspace!="recon_ws":
     sys.exit(1)
-parser = argparse.ArgumentParser(description="input the .xml path and output file path")
-parser.add_argument("--project", default="", help="project (e.g. d59 or y11)")
-parser.add_argument("--bin_directory", default="")
-parser.add_argument("--executable", default="", help="without path, use bin_directory for path")
-parser.add_argument("--script", default="")
-parser.add_argument("--copytomdss", default="")
-parser.add_argument("--mdssproject", default="")
-parser.add_argument("--stage", default="")
-args = parser.parse_args()
 
-# $1 = project (e.g. d59 or y11)
-# $2 = bin_directory
-# $3 = executable (without path, use bin_directory for path)
-# $4 = script (without path, use bin_directory for path)
-# $5 = copy to mdss
-# $6 = mdss project (w09 or h85)
-# $7 = STAGE
+if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if iteractive.
+    parser = argparse.ArgumentParser(description="input the .xml path and output file path")
+    parser.add_argument("--project", default="", help="project (e.g. d59 or y11)")
+    parser.add_argument("--bin_directory", default="")
+    parser.add_argument("--executable", default="", help="without path, use bin_directory for path")
+    parser.add_argument("--script", default="")
+    parser.add_argument("--copytomdss", default="")
+    parser.add_argument("--mdssproject", default="")
+    parser.add_argument("--stage", default="")
+    args = parser.parse_args()
 
-retry = os.system("ls *.stage")  # if there is stage file, then it is retry.
+    # $1 = project (e.g. d59 or y11)
+    # $2 = bin_directory
+    # $3 = executable (without path, use bin_directory for path)
+    # $4 = script (without path, use bin_directory for path)
+    # $5 = copy to mdss
+    # $6 = mdss project (w09 or h85)
+    # $7 = STAGE
 
-dic={}
-dic["mango_proj"]= args.project
-dic["mango_dirj"]= args.bin_directory
-dic["mango_exe"]= args.executable ## ?
-dic["sh_name"]= args.script
-dic["copy2mdss"]= args.copytomdss
-dic["stage"]= args.stage
+    init_data_filename = "init_get_data" #TODO if we need random number here.
+    dic = {}
+    dic["mango_proj"] = args.project
+    dic["mango_dirj"] = args.bin_directory
+    dic["mango_exe"] = args.executable  ## ?
+    dic["sh_name"] = args.script
+    dic["copy2mdss"] = args.copytomdss
+    dic["stage"] = args.stage
+    init_data_file_tmp = os.path.join(json_dir,init_data_filename+".tmp")
+    init_data_file = os.path.join(json_dir,init_data_filename+".json")
+    with open() as f:
+        json.dump(dic,f)
+    os.rename(init_data_file_tmp,init_data_file)
+    init_get_data()
+elif os.system("ls tmp/*.json"):
+    sys.exit(1)
+else: # TODO load last state
+    
 
-
-if not os.path.exists(init_data_file):
-
-f=open("init_data"+"_tmp","w")
-json.dump(dic,f)
-f.close()
-os.system("mv {} {}".format(init_data_file+"_tmp",init_data_file))
-
-
-
-result = init_get_data()
-
-
-
-if not result:
-    sys.exit(0)  #TODO
 
 
 
