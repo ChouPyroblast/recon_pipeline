@@ -6,6 +6,7 @@ import argparse
 import json
 from init_get_data import init_get_data
 
+init_data_filename = "init_get_data"  # TODO if we need random number here.
 json_dir = "json"
 ##### functions
 
@@ -42,7 +43,7 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
     # $6 = mdss project (w09 or h85)
     # $7 = STAGE
 
-    init_data_filename = "init_get_data" #TODO if we need random number here.
+
     dic = {}
     dic["mango_proj"] = args.project
     dic["mango_dirj"] = args.bin_directory
@@ -50,6 +51,11 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
     dic["sh_name"] = args.script
     dic["copy2mdss"] = args.copytomdss
     dic["stage"] = args.stage
+
+
+
+
+
     init_data_file_tmp = os.path.join(json_dir,init_data_filename+".tmp")
     init_data_file = os.path.join(json_dir,init_data_filename+".json")
     with open() as f:
@@ -59,7 +65,6 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
 elif os.system("ls tmp/*.json"):
     sys.exit(1)
 else: # TODO load last state
-    
 
 
 
