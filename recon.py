@@ -1,3 +1,4 @@
+# TODO check launchReconProgram.sh
 import os
 import utils
 import sys
@@ -5,8 +6,9 @@ import re
 import argparse
 import json
 from init_get_data import init_get_data
+from utils import save_json
 
-init_data_filename = "init_get_data"  # TODO if we need random number here.
+stage_file = "stage" # TODO if we need random number here.
 json_dir = "json"
 ##### functions
 
@@ -51,22 +53,16 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
     dic["sh_name"] = args.script
     dic["copy2mdss"] = args.copytomdss
     dic["stage"] = args.stage
+    save_json(dic)
+
+    init_get_data(dic)
 
 
 
-
-
-    init_data_file_tmp = os.path.join(json_dir,init_data_filename+".tmp")
-    init_data_file = os.path.join(json_dir,init_data_filename+".json")
-    with open() as f:
-        json.dump(dic,f)
-    os.rename(init_data_file_tmp,init_data_file)
-    init_get_data()
 elif os.system("ls tmp/*.json"):
     sys.exit(1)
-else: # TODO load last state
-
-
+else: # TODO accroding to the sys argument or existing file, to call different stage method
+    pass
 
 
 
