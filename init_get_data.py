@@ -3,6 +3,7 @@ import recon
 import json
 import sys
 import utils
+from utils import save_json
 """
 TODO: Maybe merge with recon.py
 """
@@ -14,7 +15,7 @@ cwd = os.path.split(cwd)[0]
 workspace = os.path.split(cwd)[1]
 
 
-def init_get_data():
+def init_get_data(dic):
     dic = utils.load_json(recon.json_dir ,recon.init_data_filename)
 
 
@@ -46,15 +47,19 @@ def init_get_data():
                 acqcom_user= currentComputer
     if acq_comp == None:
         print("couldn't find project/sample name")
-        return False
+        sys.exit("couldn't find project/sample name")
 
-    dic = {}
-    dic[""] =
-    dic[""]
+    dic["stage"] = "get_data"
+    dic["acq_comp"] = acq_comp
+    dic["acqcom_root"] = acqcom_root
+    dic["acqcom_user"] = acqcom_user
+    save_json(dic)
 
-    json .
 
-
-    return True
+    # cmd = "qsub -q copyq -N get_data -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00,other=gdata4 -v STAGE=get_data,DATA_ONLY=$data_only,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script,ACQCOMP=$acqcomp,ACQCOMPROOT=$acqcomp_root,ACQCOMPUSER=$acqcomp_user $script"
+    cmd = "qsub -q copyq -N get_data -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00,other=gdata4 get_data.py"  #TODO check the arguments of qsub
+    if os.system(cmd):
+        sys.exit("Cannot qsub {}".format())
+    sys.exit(0)
 
 

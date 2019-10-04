@@ -5,6 +5,19 @@ import numpy as np
 import re
 import stat
 import json
+def save_json(dic):
+    """
+    To save dic into stage file.
+    :param dic:
+    :return:
+    """
+    stage_file = "stage"
+    init_data_file_tmp = os.path.join(stage_file  + ".tmp")
+    init_data_file = os.path.join(stage_file + ".json")
+    with open() as f:
+        json.dump(dic, f)
+    os.rename(init_data_file_tmp, init_data_file)
+
 def writeToJson(json_dir,stage,dic):
     file_tmp = os.path.join(json_dir, stage+ ".tmp")
     file_final = os.path.join(json_dir, stage + ".json")
@@ -13,8 +26,8 @@ def writeToJson(json_dir,stage,dic):
     os.rename(file_tmp, file_final)
 
 def load_json(json_dir,stage):
-
-    initfilepath = os.path.join(json_dir, stage,".json")
+    stage_file = "stage"
+    initfilepath = os.path.join(stage_file,".json")
 
     with open(initfilepath) as f:
         dic = json.loads(f)
