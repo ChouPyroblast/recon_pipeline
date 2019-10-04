@@ -48,11 +48,12 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
 
     dic = {}
     dic["mango_proj"] = args.project
-    dic["mango_dirj"] = args.bin_directory
+    dic["mango_dir"] = args.bin_directory
     dic["mango_exe"] = args.executable  ## ?
     dic["sh_name"] = args.script
     dic["copy2mdss"] = args.copytomdss
     dic["stage"] = args.stage
+    dic["mdssproject"] = args.mdssproject
     save_json(dic)
 
     init_get_data(dic)

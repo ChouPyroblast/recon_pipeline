@@ -34,11 +34,11 @@ def init_get_data(dic):
     f = open(os.path.join(home,".reconControllerComputerList"))
 
     s = f.readline()
-    while s:#TODO check reconControllerComputerList
+    while s: # TODO check reconControllerComputerList
         s = f.readline()
-        currentUser = "" #TODO
-        currentComputer = "";
-        currentRoot = "";
+        currentUser = ""  # TODO
+        currentComputer = ""
+        currentRoot = ""
         if currentUser != "#*":
             print("Looker for data in {}@{}:{}/{}/{}".format(currentUser,currentComputer,currentRoot,proj,sample))
             if not os.system("ssh $currentUser @$currentComputer test - d $currentRoot /$project /$sample"):
@@ -51,7 +51,7 @@ def init_get_data(dic):
 
     dic["stage"] = "get_data"
     dic["acq_comp"] = acq_comp
-    dic["acqcom_root"] = acqcom_root
+    dic["acqcom_root"]   = acqcom_root
     dic["acqcom_user"] = acqcom_user
     save_json(dic)
 

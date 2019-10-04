@@ -6,10 +6,9 @@ import datetime
 import time
 import read_data
 import zlib
+import sys
 
-# todo: details about the structure of folders and files.
-# todo: change preferred cipher.
-# todo: if we need to record corrputed fiels.
+# TODO the termination condition
 
 parser = argparse.ArgumentParser(description="get experiment data from acquisition machines")
 parser.add_argument("--comp", default="appc59.anu.edu.au", help="Acquisition machine")
@@ -27,7 +26,7 @@ cwd = os.getcwd()
 
 if cwd.split(os.sep)[-3] != "test_transfer":
     print("Fatal: Must be run from within recon_ws/project/sample")
-    exit(1)
+    sys.exit(2)
 sample = cwd.split(os.sep)[-1]
 project = cwd.split(os.sep)[-2]
 
@@ -38,12 +37,12 @@ if args.password:
     flag = client.connect(username=args.user, password=args.password)
     if not flag:
         print("no connection")
-        exit(1)
+        sys.exit(1)
 else:
     flag = client.connect(username=args.user, pkey=args.password)
     if not flag:
         print("no connection")
-        exit(1)
+        sys.exit(1)
 
 remotedir = args.remotedir
 workdir = args.workdir
@@ -79,7 +78,7 @@ if exptfile:
     exptfile.close()
 else:
     print("Cannot find expt file!")
-    exit(2)
+    sys.exit(2)
 expt = read_data.read_file_flat(lines)
 
 expt_counter["num_dark_fields"] = expt["num_dark_fields"]
@@ -107,7 +106,7 @@ while i < max_access_times:
         lines = remotelog.read().decode("utf-8").rstrip().split("\n")  # todo record read lines
         remotelog.close()
     else:
-        print("Fatal. Cannot open remote log, exit ")
+        print("Fatal. Cannot open remote log ")
         errorcount = errorcount + 1
         continue
     readyfiles = {}  # this dict contains files that finish acquisition and its checksum
@@ -179,7 +178,7 @@ while i < max_access_times:
     if expt_counter["num_dark_fields"] == file_counter["expt_D"] and expt_counter["num_clear_fields"] == file_counter[
         "expt_C"] and expt_counter["total_num_projections"] == file_counter["expt_H"] + file_counter["expt_0"]:
         print("all files copied. exit")
-        os._exit(1)
+        sys.exit(1)
 
     if sleepflag:  # if no files are downloaded, wait for 30 sec
         print("no files are downloaded, wait for 30 sec")
@@ -190,8 +189,8 @@ while i < max_access_times:
 
     if notask > 50:  # wait for too long time. Quit.
         print("There is no task for too long time, quit")
-        exit(0)
+        sys.exit(1
     if errorcount > 50:
         print("Too much errors")
-        exit(1)
+        sys.exit(1)
     i = i + 1
