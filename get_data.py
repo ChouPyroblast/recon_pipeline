@@ -38,3 +38,5 @@ if dic["copy2mdss"]:
         pass #TODO mdss OCT
     else
         mdssproj_data()
+
+#TODO write to stage.json
