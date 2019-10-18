@@ -5,6 +5,8 @@ import numpy as np
 import re
 import stat
 import json
+def getOSCommand():
+    return os.popen('cat /etc/services').read().strip()
 def save_json(dic):
     """
     To save dic into stage file.
