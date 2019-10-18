@@ -3,7 +3,9 @@ import sys
 import os
 from shutil import copyfile
 from utils import getOSCommand
-
+from utils import runCmd
+import datetime
+import utils
 dic = utils.load_json("stage.json")
 
 
@@ -28,17 +30,17 @@ def recon():
     isTall = getOSCommand("cat proju16_raw/expt*.in | tr -d '\r' | grep -m1 num_voxels| awk '{print $2}' | awk 'BEGIN "
                           '{FS="[<>]+"}' 
                           " ($4/($2+$3) > 1.5) {print true} (!($4/($2+$3) > 1.5)) {print false} '")
-    reconType = dH
+    reconType = "dH"
 
     if isAxialROI:
-        reconType = SFT_AxialROI
+        reconType = "SFT_AxialROI"
         projDirs = ("proju16_roi_raw","proju16_overview_raw")
     elif isSFT:
-        reconType = SFT
+        reconType = "SFT"
     elif isTall:
-        reconType = dH_pcm
+        reconType = "dH_pcm"
 
-    TEMPLATEDIR = os.path.join(dic[mango_dir],templates)
+    TEMPLATEDIR = os.path.join(dic['mango_dir'],'templates')
     if not os.isfile("recon.template.in"):
         srcfilename = "{}/recon.{}_{}.template.in".format(TEMPLATEDIR,reconSystem,reconType)
         destname = "recon.template.in"
@@ -80,3 +82,14 @@ def recon():
                 QSPEC = '--partition=gpucluster0 --use-min-nodes --nodes=2 --exclusive'
             else:
                 QSPEC = '--partition=gpucluster0 --use-min-nodes --nodes=3 --exclusive'
+        runCmd('sed -i "s#{}#{}#" recon.template.slurm.sh'.format(MATCHQSPEC,QSPEC))
+    rand_name = getOSCommand("LC_CTYPE=C tr -d -c '[:alnum:]' </dev/urandom | head -c 8")
+    workdir = "recon-run-{}-{}".format(datetime.date.today("%Y%m%d").strftime(),rand_name)
+    jobname = rand_name
+
+    os.mkdir(workdir)
+    print("Correcting permissions...please wait")
+    for projdir in projDirs:
+        os.symlink(projdir,os.path.join(workdir,projdir))
+        os.chown(projdir,group="w09")
+        os.chmod(projdir,"ug+rX")
