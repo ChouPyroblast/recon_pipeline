@@ -278,3 +278,30 @@ class ReconTemplate():
     def unInstall(self):
         if os.path.isfile(self.dst):
             os.remove(self.dst)
+
+class AtomicFile:
+    def __init__(self,filename):
+        self.f = open(filename+"tmp",'w')
+
+    def copy(self,copied_filename):
+        """
+        Copy a file to this file
+        :param copied_filename:
+        """
+        with open(copied_filename) as f:
+            self.f.write(f.read())
+
+    def write(self,string):
+        self.f.write(string)
+
+    def append(self,filename,string):
+        self.copy(filename)
+        self.write(string)
+
+    def save(self,replace = False):
+        if not replace and os.path.exists("filename"):
+            print("{} already exists")
+            return False
+
+        self.f.close()
+        os.rename(filename+"tmp",filename)

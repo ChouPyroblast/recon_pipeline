@@ -36,7 +36,7 @@ else:
 if dic["copy2mdss"]:
     if dic["project"] == "OCT":
         pass #TODO mdss OCT
-    else
+    else:
         mdssproj_data()
 
 #TODO write to stage.json

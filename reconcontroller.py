@@ -24,6 +24,11 @@ cwd = os.path.split(cwd)[0]
 workspace = os.path.split(cwd)[1]
 
 if workspace!="recon_ws":
+    print("Fatal: Must be run from within recon_ws/project/sample.")
+    sys.exit(1)
+
+if "__ROI_0001" in sample or "__ROI_0002" in sample:
+    print("Fatal: ROI data must be fetched from the main directory not the child scan.")
     sys.exit(1)
 
 if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if iteractive.
@@ -98,7 +103,7 @@ else: # TODO accroding to the sys argument or existing file, to call different s
 
 
 
-
+"""
 
 
 
@@ -195,3 +200,4 @@ if currentstate.isSLURM():
 pbs_jobid = os.getenv("SLURM_JOB_ID")
 
 argvlen = len(sys.argv)
+"""

@@ -6,12 +6,11 @@ from utils import getOSCommand
 from utils import runCmd
 import datetime
 import utils
+import
 dic = utils.load_json("stage.json")
 
 
 def recon():
-
-
     if dic["data_only"]:
         sys.exit(0)
 
@@ -21,6 +20,7 @@ def recon():
 
 
     #queueOnGPU
+    
     os.system('echo "`date`: pipeline handover to GPU" >> STATUS_RECON.txt')
     reconSystem=GPU
 
@@ -91,5 +91,16 @@ def recon():
     print("Correcting permissions...please wait")
     for projdir in projDirs:
         os.symlink(projdir,os.path.join(workdir,projdir))
-        os.chown(projdir,group="w09")
-        os.chmod(projdir,"ug+rX")
+        runCmd("chgrp -R w09    {}/").format(projdir)
+        runCmd("chmod -R ug+rX  {}/").format(projdir)
+        runCmd("chgrp  w09    {}/").format(projdir)
+        runCmd("chmod  ug+rX  {}/").format(projdir)
+        runCmd('( cd "{}/{} " && cd `pwd -P` && chgrp w09 . && chmod ug+rx . && cd .. && chgrp w09 . && chmod ug+rx . )').format(workdir,projdir)
+        runCmd('( cd "{}/{}" && chgrp w09 . && chmod ug+w . )').format(workdir,projdir)
+        runCmd('cd "{}/{}" && chgrp w09 AlignmentParmVals.dat && chmod ug+w AlignmentParmVals.dat').format(workdir,projdir)
+    print('Correcting permissions. Done.')
+    runCmd('( cd "{}" && templateApplyIn.py prerun ../recon.template.in recon.template.in )').format(workdir)
+    copyfile("recon.template.slurm.sh", "{}/recon.slurm.sh".format(workdir))
+
+    runCmd('chgrp -R w09    "{}"'.format(workdir))
+    runCmd('chmod -R ug+rwX    "{}"'.format(workdir))
