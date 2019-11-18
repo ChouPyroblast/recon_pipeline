@@ -1,0 +1,63 @@
+# Queue on GPU
+
+1. Write mango project,mango dir, mango exe, shell name, scriptname,copy to mdss,mdss project and stage ,data only to <__config__>
+
+2. createStatusReconLink:
+    2.1 mkdir repository/project/sample
+    2.2 create file repository/project/sample/status_recon.txt
+    2.3 change group and mod of status_recon.txt
+    2.4 change group of sample
+    2.5 change group of project
+    2.6 create symbolic link status_recon.txt to repository/project/sample/status_recon.txt
+
+3. write current date to status recon.txt
+
+4. Set reconSystem as GPU
+
+5. SetIsAxialROI: if exist proju16_roi_raw and proju16_overview_raw 
+
+6. SetIsSFT. proju16_raw/expt*.in iterative_trajectory 
+
+7. SetIsTall check if height is more than 3x average width. from "num_voxels" in "proju16_raw/expt*.in"
+
+8. recontype = dh
+
+9. if is axialROI, recontype = SFT_AxialROI, projdirs = ("proju16_roi_raw" "proju16_overview_raw")
+   elif isSFT recontype is SFT, elif istall = True, recontype is dh_PCM
+
+10 TemplateDIR = "$mango_dir/templates"
+
+11 if there is no file recon.template.in, copy recon.template.in from $TEMPLATEDIR/recon.${reconSystem}_${reconType}.template.in
+
+12 if there is no file recon.template.slurm.sh,  
+    12.1 copy from  $TEMPLATEDIR/recon.${reconSystem}_${reconType}.template.slurm.sh
+    12.2 get the size of the projcet as GB ( projSizeGB)
+    12.3 need memory(memNeededGB) is 15 times projSizeGB
+    12.4 MATCHQSPEC = "--partition = gpucluster0" QSPEC = MatchQSPEC
+    12.5 Accroding to the recontype and memneededGB, update MATCHQSPEC and QSPEC.
+    12.6 update  --partition=gpucluster0 in recon.template.slurm.sh
+
+13. create a RANDOMNAME
+
+14. create workdir as recon-run-date-randomname
+
+15. jobname = randomname
+
+16. edit permissions
+
+17.  run templateapplyin.py under workdir.
+
+18. copy recon.template.slurm.sh into workdir.
+
+19. if no_launch_recon, #pass
+
+20. if mango stop after recon then create a file __STOP_AFTER_RECON__
+
+21. create a jobname.sh under GPURUNDIRECTORY
+
+22. write ... to jobname.sh
+
+23. chgrp and chmod of jobname.sh
+
+24. ssh GPU run directoryQueue.sh
+
