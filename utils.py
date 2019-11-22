@@ -27,6 +27,7 @@ def writeToJson(json_dir,stage,dic):
         json.dump(dic, f)
     os.rename(file_tmp, file_final)
 
+
 def load_json(json_dir,stage):
     stage_file = "stage"
     initfilepath = os.path.join(stage_file,".json")
@@ -36,7 +37,8 @@ def load_json(json_dir,stage):
 
     return dic
 
-
+def append_to_file(string, filename):
+    with open()
 
 
 
@@ -181,6 +183,9 @@ class RunState():
                             largestVoxelCount = totalVoxels
                             largestXYZ = xyz
         return largestXYZ
+    def isTall(self):
+        xyz = self.voxelsXYZ()
+        return xyz[2] / (xyz[0]+xyz[1])
 
     def getSampleName(self):
         if self.runInSubdir:
@@ -228,6 +233,26 @@ class RunState():
             raise RuntimeError("Nothing at the path %s specified by MANGO_DIR and MANGO_EXE"
                 % mango)
         return mango
+
+    def isSFT(self):
+
+        fNames = glob.glob('proju16*_raw/expt_tomo.in')
+        if len(fNames) == 0:
+            fNames = glob.glob('expt_tomo.in')
+        for fName in fNames:
+            with open(fName) as inFile:
+                doGPU = any(re.match("\s+iterative_trajectory\s+true\s+", line) for line in inFile)
+            if doGPU:
+                return doGPU
+        return doGPU
+    """
+    isAxialROI = os.path.isdir("proju16_roi_raw") and os.path.isdir("proju16_overview_raw")
+    isSFT = getOSCommand("cat proju16_raw/expt*.in | tr -d '\r' | grep -m1 iterative_trajectory | awk '{print $2}'")=="true"
+
+    isTall = getOSCommand("cat proju16_raw/expt*.in | tr -d '\r' | grep -m1 num_voxels| awk '{print $2}' | awk 'BEGIN "
+                          '{FS="[<>]+"}' 
+                          " ($4/($2+$3) > 1.5) {print true} (!($4/($2+$3) > 1.5)) {print false} '")
+    """
 
 
 class ReconTemplate():
@@ -282,7 +307,7 @@ class ReconTemplate():
 class AtomicFile:
     def __init__(self,filename):
         self.f = open(filename+"tmp",'w')
-
+        self.filename = filename
     def copy(self,copied_filename):
         """
         Copy a file to this file
@@ -294,14 +319,23 @@ class AtomicFile:
     def write(self,string):
         self.f.write(string)
 
-    def append(self,filename,string):
-        self.copy(filename)
+    def append(self,string):
+        self.copy(self.filename)
         self.write(string)
+    def replace(self,old_string,new_string):
+        # replace string 1 by string 2
+        if not os.path.exists(self.filename):
+            print("{} does not exists").format(self.filename)
+            return False
+
+        with open(self.filename) as f:
+            strings = f.read()
+            self.f.write(strings.replace(old_string,new_string))
 
     def save(self,replace = False):
-        if not replace and os.path.exists("filename"):
-            print("{} already exists")
+        if not replace and os.path.exists(self.filename):
+            print("{} already exists").format(self.filename)
             return False
 
         self.f.close()
-        os.rename(filename+"tmp",filename)
+        os.rename(self.filename+"tmp",self.filename)

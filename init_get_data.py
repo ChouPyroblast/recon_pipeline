@@ -1,5 +1,5 @@
 import os
-import recon
+import reconcontroller
 import json
 import sys
 import utils
@@ -16,15 +16,11 @@ workspace = os.path.split(cwd)[1]
 
 
 def init_get_data(dic):
-    dic = utils.load_json(recon.json_dir ,recon.init_data_filename)
+    dic = utils.load_json(reconcontroller.json_dir ,reconcontroller.init_data_filename)
 
-
-    if os.path.exists(""):
-        pass
-
-    acq_comp = None;
-    acqcom_user= None;
-    acqcom_root = None;
+    acq_comp = None
+    acqcom_user= None
+    acqcom_root = None
     currentRoot = "g/data2/w09/CT_Data"
 
 
