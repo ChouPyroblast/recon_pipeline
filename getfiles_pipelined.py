@@ -189,7 +189,7 @@ while i < max_access_times:
 
     if notask > 50:  # wait for too long time. Quit.
         print("There is no task for too long time, quit")
-        sys.exit(1
+        sys.exit(1)
     if errorcount > 50:
         print("Too much errors")
         sys.exit(1)
