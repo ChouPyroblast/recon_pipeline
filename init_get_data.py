@@ -15,16 +15,14 @@ cwd = os.path.split(cwd)[0]
 workspace = os.path.split(cwd)[1]
 
 
-def init_get_data(dic):
+def init_get_data():
     dic = utils.load_json(reconcontroller.json_dir ,reconcontroller.init_data_filename)
-
     acq_comp = None
     acqcom_user= None
     acqcom_root = None
     currentRoot = "g/data2/w09/CT_Data"
 
 
-    #TODO some code is deleted here.
 
     home = os.getenv("HOME")
     f = open(os.path.join(home,".reconControllerComputerList"))
@@ -59,3 +57,10 @@ def init_get_data(dic):
     sys.exit(0)
 
 
+
+def get_data():
+    # cmd = "qsub -q copyq -N get_data -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00,other=gdata4 -v STAGE=get_data,DATA_ONLY=$data_only,MANGO_DIR=$mango_dir,MANGO_EXE=$mango_exe,SH_NAME=$sh_name,MANGO_PROJECT=$mango_proj,COPY_TO_MDSS=$copy2mdss,MDSS_PROJECT=$mdss_proj,SCRIPTNAME=$script,ACQCOMP=$acqcomp,ACQCOMPROOT=$acqcomp_root,ACQCOMPUSER=$acqcomp_user $script"
+    cmd = "qsub -q copyq -N get_data -P $mango_proj -W umask=027 -lncpus=1,mem=2GB,walltime=24:00:00,other=gdata4 get_data.py"  #TODO check the arguments of qsub
+    if os.system(cmd):
+        sys.exit("Cannot qsub {}".format())
+    sys.exit(0)

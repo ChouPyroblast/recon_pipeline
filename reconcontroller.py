@@ -37,9 +37,9 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
     parser.add_argument("--bin_directory", default="")
     parser.add_argument("--executable", default="", help="without path, use bin_directory for path")
     parser.add_argument("--script", default="")
-    parser.add_argument("--copytomdss", default="")
+    parser.add_argument("--copytomdss", default=True)
     parser.add_argument("--mdssproject", default="")
-    parser.add_argument("--stage", default="")
+    parser.add_argument("--stage", default="init_get_data")
     args = parser.parse_args()
 
     # $1 = project (e.g. d59 or y11)
@@ -65,10 +65,14 @@ if os.getenv("PBS_JOBID"): # on cluster.   TODO find a better way to  check if i
 
 
 
-elif os.system("ls tmp/*.json"):
+elif not os.path.exists("stage.json"):
+    print("Cannot find stage.json file")
     sys.exit(1)
-else: # TODO accroding to the sys argument or existing file, to call different stage method
-    pass
+
+
+# TODO: 1. load json file if run on cluster.
+        2. start from other stage.
+
 
 
 

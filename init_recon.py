@@ -9,10 +9,13 @@ import utils
 import random
 import parameters
 
-dic = utils.load_json("stage.json")
+
 
 
 def recon():
+    dic = utils.load_json("stage.json")
+    dic["stage"] = "recon"
+    utils.save_json(dic)
     if dic["data_only"]:
         sys.exit(0)
 
@@ -121,8 +124,8 @@ def recon():
     # TODO if MANGO_NO_LAUNCH_RECON
 
     FULLWORKDIR = getOSCommand("`pwd - P` /$WORKDIR")
-
-    runfile = utils.AtomicFile(os.path.join(parameters.GPURUNDIRECTORY, jobname))
+    runfilename = os.path.join(parameters.GPURUNDIRECTORY, jobname)
+    runfile = utils.AtomicFile(os.path.join(runfilename))
     string = """#!/bin/bash
                 ulimit -S -c 0
                  cd '$FULLWORKDIR' \\
@@ -131,5 +134,12 @@ def recon():
                  && echo `date` 'sbatch reconPostrun.py' >> _queued_ \\
                  && sbatch --job-name=$JOBNAME reconPostrun.py >> _queued_ \\
                  && echo "`date`: reconstruct queued GPU" >> ../STATUS_RECON.txt \\
-                 || echo "`date`: FAILED: reconstruct queue GPU" >> ../STATUS_RECON.txt"""
-    runfile.write("#!/bin/bash")
+                 || echo "`date`: FAILED: reconstruct queue GPU" >> ../STATUS_RECON.txt
+                 """
+    runfile.write(string)
+
+    runfile.save()
+    runCmd('chgrp -R w09    "{}"'.format(runfilename))
+    runCmd('chmod -R ug+rwX    "{}"'.format(runfilename))
+    utils.runCmd('ssh $GPUSSH "ls -d {} >/dev/null && squeue >/dev/null && runDirectoryQueue.sh {}"'.format(parameters.GPURUNDIRECTORY.parameters.GPURUNDIRECTORY))
+

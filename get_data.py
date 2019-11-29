@@ -39,6 +39,6 @@ if dic["copy2mdss"]:
         pass #TODO mdss OCT
     else:
         mdssproj_data()
+
 init_recon.recon()
 
-#TODO write to stage.json

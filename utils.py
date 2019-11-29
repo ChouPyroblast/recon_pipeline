@@ -5,6 +5,7 @@ import numpy as np
 import re
 import stat
 import json
+import subprocess
 def getOSCommand():
     return os.popen('cat /etc/services').read().strip()
 def save_json(dic):
@@ -36,11 +37,6 @@ def load_json(json_dir,stage):
         dic = json.loads(f)
 
     return dic
-
-def append_to_file(string, filename):
-    with open()
-
-
 
 def onRaijin():
     return RunEnvironment().isPBS()
